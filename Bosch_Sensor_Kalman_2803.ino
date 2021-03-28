@@ -58,20 +58,8 @@ void loop_() {
   float height_average_variable = height_average(calc_height_variable);
 
   if (height_average_variable != 0) {
-
-    float estimated_altitude_kalman = pressureKalmanFilter.updateEstimate(calc_height_variable);
     float estimated_altitude_average = pressureKalmanFilter.updateEstimate(height_average_variable);
-
-//    Serial.print(calc_height_variable);
-//    Serial.print(",");
-//    Serial.print(height_average_variable);
-//    Serial.print(",");
-//    Serial.print(estimated_altitude_kalman);
-//    Serial.print(",");
-//    Serial.println(estimated_altitude_average);
-    
   }
-  ////////////////////////////////////////////////////////////////////////
   delay(200);
 }
 
