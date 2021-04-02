@@ -14,19 +14,13 @@
 
 Adafruit_BMP3XX bmp;
 
-/*
- SimpleKalmanFilter(e_mea, e_est, q);
- e_mea: Measurement Uncertainty 
- e_est: Estimation Uncertainty 
- q: Process Noise
- */
-SimpleKalmanFilter pressureKalmanFilter(0.5, 0.5, 1);
+Initiate_SimpleKalmanFilter();
 
-float in = 0;
-float sum = 0;
-int size_queue = 20;
-cppQueue  q(sizeof(in), size_queue, FIFO);  // Instantiate queue
-
+// `Data` represents one datapoint, measured by our sensors
+struct Data {
+  float height;
+  float estimated_altitude_average;
+} datapoint;
 
 void setup() {
   Serial.begin(9600);
@@ -54,20 +48,21 @@ void loop_() {
     return;
   }
 
-  float calc_height_variable = calc_height(bmp.temperature, bmp.pressure / 100.0);
-  float height_average_variable = height_average(calc_height_variable);
+  datapoint.height = calc_height(bmp.temperature, bmp.pressure / 100.0);
 
+
+  float height_average_variable = height_average(datapoint.height);
   if (height_average_variable != 0) {
-    float estimated_altitude_average = pressureKalmanFilter.updateEstimate(height_average_variable);
+    datapoint.estimated_altitude_average = pressureKalmanFilter.updateEstimate(height_average_variable);
   }
+
   delay(200);
 }
 
 void loop() {}
 
-float height_average(float calc__height){
+float height_average(float in){
   
-  in = calc__height;
   float out;
   q.push(&(in));
   
@@ -90,4 +85,20 @@ float height_average(float calc__height){
 float calc_height(float temp, float pressure) {
   const float P0 = 1023; 
   return ((pow((P0 / pressure), (1/5.257)) - 1) * (1) * (temp + 273.15)) / 0.0065;
+}
+
+
+void Initiate_SimpleKalmanFilter() {
+/*
+ SimpleKalmanFilter(e_mea, e_est, q);
+ e_mea: Measurement Uncertainty 
+ e_est: Estimation Uncertainty 
+ q: Process Noise
+ */
+SimpleKalmanFilter pressureKalmanFilter(0.5, 0.5, 1);
+
+static float in = 0;
+static float sum = 0;
+int size_queue = 20;
+cppQueue  q(sizeof(in), size_queue, FIFO);  // Instantiate queue
 }
