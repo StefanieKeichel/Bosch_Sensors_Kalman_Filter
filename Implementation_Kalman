@@ -1,0 +1,255 @@
+/* HEADERS */
+#include <SPI.h>
+#include <SD.h>
+
+#include <MPU6050_tockn.h>
+#include <MS5611.h>
+#include <Wire.h>
+
+#include <cppQueue.h>
+#include <SimpleKalmanFilter.h>
+
+/* MACROS */
+#define PRINT_VALUE(value)                       \
+  Serial.print(value); Serial.print(",");        \
+  DATA_FILE.print(value); DATA_FILE.print(",");
+
+#define PRINTLN_VALUE(value)                     \
+  Serial.println(value);                         \
+  DATA_FILE.println(value);                      \
+  DATA_FILE.flush();
+
+
+/*
+ SimpleKalmanFilter(e_mea, e_est, q);
+ e_mea: Measurement Uncertainty 
+ e_est: Estimation Uncertainty 
+ q: Process Noise
+ */
+SimpleKalmanFilter pressureKalmanFilter(0.5, 0.5, 1);
+float in = 0;
+float sum = 0;
+int size_queue = 20;
+cppQueue  q(sizeof(in), size_queue, FIFO);  // Instantiate queue
+
+
+/* DATA STRUCTURES */
+
+// `Data` represents one datapoint, measured by our sensors
+struct Data {
+  // time in ms
+  long time;
+
+  // orientation in degrees/s²
+  struct Gyro {
+    float x;
+    float y;
+    float z;
+  } gyro;
+
+  // acceleration in m/s²
+  struct Acc {
+    float x;
+    float y;
+    float z;
+  } acc;
+
+  // pressure in mbar
+  float pressure;
+
+  // temperature of the MS5611 sensor in Celsius
+  float temperatureMS;
+
+  // height in m
+  float height;
+
+  // height filtered through kalman filter
+  float filtered_height;
+} datapoint;
+
+
+/* GLOBALBS */
+// global FILE-objects for SD access
+ File LOG_FILE;
+ File DATA_FILE;
+
+// sensor
+MPU6050 mpu6050(Wire);
+MS5611 MS5611(0x77);   // 0x76 = CSB to VCC; 0x77 = CSB to GND
+
+// pins
+const int SD_CS_PORT = PA4;
+const int LED_RED_PIN = PA2;
+const int LED_GREEN_PIN = PA1;
+const int LED_BLUE_PIN = PA0;
+
+
+/* SETUP */
+void setup() {
+  Serial.begin(9600);
+  q.push(&in);
+
+  setup_led();
+  setup_sd();
+  setup_sensors();
+
+  set_led(0, 255, 0);
+}
+
+void setup_led() {
+  pinMode(LED_RED_PIN, OUTPUT); // red
+  pinMode(LED_GREEN_PIN, OUTPUT); // green
+  pinMode(LED_BLUE_PIN, OUTPUT); // blue
+}
+
+// connect to SD and create File-objects
+void setup_sd() {
+  String data_file = "-data.csv";
+  String log_file = "-log.txt";
+  // TODO: Is this pin correct?
+
+  Serial.print("Initializing SD card...");
+  if (!SD.begin(SD_CS_PORT)) {
+    Serial.println("SD initialization failed!");
+    set_led(255, 0, 0);
+    while (true) {}
+  }
+  Serial.println("SD initialization done.");
+
+  File number_file = SD.open("fileidx.txt", FILE_WRITE);
+  int pos = number_file.position();
+  number_file.write('e');
+  number_file.close();
+
+  data_file = pos + data_file;
+  log_file = pos + log_file;
+
+  DATA_FILE = SD.open(data_file, FILE_WRITE);
+  LOG_FILE = SD.open(log_file, FILE_WRITE);
+
+  Serial.println(data_file + " " + log_file);
+}
+
+void setup_sensors() {
+  print_log("MS5611 ");
+  print_log(MS5611.begin() ? "found" : "not found");
+
+  mpu6050.begin();
+  /* mpu6050.calcGyroOffsets(true); */
+  // only relevant to the GY-86
+  mpu6050.setGyroOffsets(-0.83,-1.56,0.15);
+
+  /* DATA_FILE.println("Time, TempMPU, TempMS, Pressure, heightTP, heightKalman, AccX, AccY, AccZ, GyroX, GyroY, GyroZ, AccAngleX, AccAngleY, GyroAngleX, GyroAngleY, GyroZ, AngleX, AngleY, AngleZ"); */
+  DATA_FILE.println("Time, GyroX, GyroY, GyroZ, AccX, AccY, AccZ, Pressure, TempMS, Height, KalHeight");
+  DATA_FILE.flush();
+}
+
+
+
+/* LOOOOP */
+void loop() {
+  update_sensors();
+}
+
+
+/* HELPERS */
+// prints all data from the Data struct to file and serial
+void print_data() {
+  PRINT_VALUE(datapoint.time);
+  PRINT_VALUE(datapoint.gyro.x);
+  PRINT_VALUE(datapoint.gyro.y);
+  PRINT_VALUE(datapoint.gyro.z);
+  PRINT_VALUE(datapoint.acc.x);
+  PRINT_VALUE(datapoint.acc.y);
+  PRINT_VALUE(datapoint.acc.z);
+  PRINT_VALUE(datapoint.pressure);
+  PRINT_VALUE(datapoint.temperatureMS);
+  PRINT_VALUE(datapoint.height);
+  PRINTLN_VALUE(datapoint.filtered_height);
+}
+
+// print one logging statement to logfile and serial
+void print_log(String && msg) {
+  // print to serial monitor
+  Serial.println(msg);
+
+  // print to file
+  LOG_FILE.print(millis());
+  LOG_FILE.print(": ");
+  LOG_FILE.println(msg);
+  LOG_FILE.flush();
+}
+
+void set_led(int red, int green, int blue) {
+  analogWrite(LED_RED_PIN, red);
+  analogWrite(LED_GREEN_PIN, green);
+  analogWrite(LED_BLUE_PIN, blue);
+}
+
+
+float height_average(float calc__height){
+  
+  in = calc__height;
+  float out;
+  q.push(&(in));
+  
+  if (q.getCount() < size_queue) {
+    sum += in;
+  }
+
+  if (q.getCount() == size_queue) {
+    sum += in;
+    q.pop(&out);
+    sum -= out;
+    float average = sum /size_queue;
+    return average;
+    }
+    else{
+      return 0;  
+  }
+}
+
+/* SENSORS */
+// read one datapoint, filter bad values, do precalculations and log datapoint
+void update_sensors() {
+  mpu6050.update();
+
+  int err = MS5611.read();
+  if (err != MS5611_READ_OK) {
+    print_log("Error in read:");
+    print_log("err");
+    return;
+  }
+
+  datapoint.time = millis();
+  datapoint.acc.x = mpu6050.getAccX();
+  datapoint.acc.y = mpu6050.getAccY();
+  datapoint.acc.z = mpu6050.getAccZ();
+  datapoint.gyro.x = mpu6050.getGyroX();
+  datapoint.gyro.y = mpu6050.getGyroY();
+  datapoint.gyro.z = mpu6050.getGyroZ();
+
+  datapoint.temperatureMS = MS5611.getTemperature();
+  datapoint.pressure = MS5611.getPressure();
+  datapoint.height = calc_height(datapoint.temperatureMS, datapoint.pressure);
+
+
+  float height_average_variable = height_average(datapoint.height);
+  if (height_average_variable != 0) {
+    float estimated_altitude_average = pressureKalmanFilter.updateEstimate(height_average_variable);
+  }
+  
+  
+
+  print_data();
+  /* print_log("Wrote sensor data to file"); */
+}
+
+float calc_height(float temp, float pressure) {
+  // change these on the day
+  const float P0 = 1019.5; // Sea level pressure in Berlin
+  temp = 5; // Temperature in Berlin
+  return ((pow((P0 / pressure), (1/5.257)) - 1) * (temp + 273.15)) / 0.0065;
+}
+
+
