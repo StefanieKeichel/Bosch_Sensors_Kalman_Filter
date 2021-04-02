@@ -19,7 +19,6 @@
   DATA_FILE.println(value);                      \
   DATA_FILE.flush();
 
-
 /*
  SimpleKalmanFilter(e_mea, e_est, q);
  e_mea: Measurement Uncertainty 
@@ -64,7 +63,7 @@ struct Data {
   float height;
 
   // height filtered through kalman filter
-  float filtered_height;
+  float estimated_altitude_average;
 } datapoint;
 
 
@@ -165,7 +164,7 @@ void print_data() {
   PRINT_VALUE(datapoint.pressure);
   PRINT_VALUE(datapoint.temperatureMS);
   PRINT_VALUE(datapoint.height);
-  PRINTLN_VALUE(datapoint.filtered_height);
+  PRINTLN_VALUE(datapoint.estimated_altitude_average);
 }
 
 // print one logging statement to logfile and serial
@@ -236,11 +235,9 @@ void update_sensors() {
 
   float height_average_variable = height_average(datapoint.height);
   if (height_average_variable != 0) {
-    float estimated_altitude_average = pressureKalmanFilter.updateEstimate(height_average_variable);
+    datapoint.estimated_altitude_average = pressureKalmanFilter.updateEstimate(height_average_variable);
   }
   
-  
-
   print_data();
   /* print_log("Wrote sensor data to file"); */
 }
