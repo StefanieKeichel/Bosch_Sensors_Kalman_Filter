@@ -176,9 +176,8 @@ void set_led(int red, int green, int blue) {
 }
 
 
-float height_average(float calc__height){
+float height_average(float in){
   
-  in = calc__height;
   float out;
   q.push(&(in));
   
