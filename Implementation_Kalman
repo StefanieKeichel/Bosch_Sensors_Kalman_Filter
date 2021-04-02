@@ -19,17 +19,7 @@
   DATA_FILE.println(value);                      \
   DATA_FILE.flush();
 
-/*
- SimpleKalmanFilter(e_mea, e_est, q);
- e_mea: Measurement Uncertainty 
- e_est: Estimation Uncertainty 
- q: Process Noise
- */
-SimpleKalmanFilter pressureKalmanFilter(0.5, 0.5, 1);
-float in = 0;
-float sum = 0;
-int size_queue = 20;
-cppQueue  q(sizeof(in), size_queue, FIFO);  // Instantiate queue
+Initiate_SimpleKalmanFilter();
 
 
 /* DATA STRUCTURES */
@@ -250,3 +240,17 @@ float calc_height(float temp, float pressure) {
 }
 
 
+void Initiate_SimpleKalmanFilter() {
+/*
+ SimpleKalmanFilter(e_mea, e_est, q);
+ e_mea: Measurement Uncertainty 
+ e_est: Estimation Uncertainty 
+ q: Process Noise
+ */
+SimpleKalmanFilter pressureKalmanFilter(0.5, 0.5, 1);
+
+static float in = 0;
+static float sum = 0;
+int size_queue = 20;
+cppQueue  q(sizeof(in), size_queue, FIFO);  // Instantiate queue
+}
